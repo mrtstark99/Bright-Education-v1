@@ -1,0 +1,19 @@
+# Environment & Keys
+.env
+.env.*
+database/.secret_key
+
+# Logs & Cache
+error.log
+*.log
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

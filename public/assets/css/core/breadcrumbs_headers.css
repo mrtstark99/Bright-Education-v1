@@ -1,0 +1,117 @@
+/* Category & General Breadcrumb */
+.category-page-wrap {
+  margin-top: 0.5rem;
+}
+
+.breadcrumb-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+  flex-wrap: wrap;
+}
+
+.category-breadcrumb {
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .category-breadcrumb {
+    margin-bottom: 2rem;
+  }
+}
+
+.breadcrumb-nav a {
+  color: var(--muted-foreground);
+  transition: color 0.15s;
+}
+
+.breadcrumb-nav a:hover {
+  color: var(--foreground);
+}
+
+.breadcrumb-current {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* Modern Section Headers */
+.section-header-modern {
+  display: flex;
+  margin-bottom: 2.5rem;
+}
+
+.category-header-modern {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+@media (min-width: 640px) {
+  .category-header-modern {
+    margin-bottom: 3rem;
+  }
+}
+
+.category-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.category-title-main {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  color: var(--foreground);
+  margin-top: 0.25rem;
+  line-height: 1.25;
+}
+
+@media (min-width: 640px) {
+  .category-title-main {
+    font-size: 2.25rem;
+  }
+}
+
+.category-desc-text {
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+  margin-top: 0.25rem;
+  max-width: 680px;
+  line-height: 1.65;
+}
+
+@media (min-width: 640px) {
+  .category-desc-text {
+    font-size: 1.05rem;
+  }
+}
+
+.featured-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.section-count-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}

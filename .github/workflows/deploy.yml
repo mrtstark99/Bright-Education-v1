@@ -1,0 +1,140 @@
+name: Deploy Bright Education v1 to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test_and_deploy:
+    name: Test & Deploy to brhub-web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP for regression checks
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, mbstring, pdo_sqlite, curl
+
+      - name: Run Core & Feature Tests
+        run: |
+          echo "==> Running core test suite..."
+          php tests/run_tests.php
+          echo "==> Running Bright Education feature suite..."
+          php tests/bright_edu_feature_test.php
+          echo "==> Running Post Element Contract test..."
+          php tests/post_element_contract_test.php
+          echo "==> Running AI Guidelines test..."
+          php tests/ai_guidelines_test.php
+
+      - name: Install Cloudflared
+        run: |
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          rm cloudflared.deb
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          # Configure SSH with cloudflared ProxyCommand and gateway jump
+          cat << 'EOF' > ~/.ssh/config
+          Host gateway
+              HostName ${{ secrets.SSH_HOST || 'ssh.dev-br.xyz' }}
+              User ${{ secrets.SSH_USER || 'stark' }}
+              IdentityFile ~/.ssh/id_ed25519
+              StrictHostKeyChecking no
+              ProxyCommand cloudflared access ssh --hostname %h
+
+          Host web-node
+              HostName ${{ secrets.WEB_VM_IP || '192.168.0.110' }}
+              User ${{ secrets.SSH_USER || 'stark' }}
+              IdentityFile ~/.ssh/id_ed25519
+              StrictHostKeyChecking no
+              ProxyJump gateway
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Package Application
+        run: |
+          tar --exclude="database/blog.db*" \
+              --exclude="database/.secret_key" \
+              --exclude="error.log" \
+              --exclude="*.log" \
+              --exclude=".git" \
+              --exclude=".github" \
+              -czf /tmp/blog_deploy.tar.gz .
+          echo "Package created at /tmp/blog_deploy.tar.gz"
+
+      - name: Transfer Package to Server
+        run: |
+          scp /tmp/blog_deploy.tar.gz web-node:/tmp/blog_deploy.tar.gz
+
+      - name: Extract & Apply Updates on brhub-web
+        run: |
+          ssh web-node << 'REMOTE_SCRIPT'
+            set -e
+            echo "==> Deploying Bright-Education-v1 to /www/wwwroot/blog..."
+
+            sudo mkdir -p /www/wwwroot/blog/database/backups
+            if [ -f /www/wwwroot/blog/database/blog.db ]; then
+              sudo cp -p /www/wwwroot/blog/database/blog.db /www/wwwroot/blog/database/backups/blog.db.$(date +%Y%m%d_%H%M%S).bak
+            fi
+
+            # Extract new code
+            sudo tar -xzf /tmp/blog_deploy.tar.gz -C /www/wwwroot/blog/
+            rm -f /tmp/blog_deploy.tar.gz
+
+            # Ensure upload & database folders exist
+            sudo mkdir -p /www/wwwroot/blog/database /www/wwwroot/blog/public/uploads
+
+            # Set correct ownership and permissions
+            sudo chown -R www:www /www/wwwroot/blog
+            sudo chmod -R 755 /www/wwwroot/blog
+            sudo chmod -R 775 /www/wwwroot/blog/database /www/wwwroot/blog/public/uploads
+
+            # Run database migrations
+            if [ -f /www/wwwroot/blog/database/migrate_bright_edu.php ]; then
+              echo "==> Running Bright Education service migration..."
+              cd /www/wwwroot/blog && sudo -u www php database/migrate_bright_edu.php
+            fi
+            if [ -f /www/wwwroot/blog/database/migrate_consultations_and_qa.php ]; then
+              echo "==> Running Bright Education consultation & QA migration..."
+              cd /www/wwwroot/blog && sudo -u www php database/migrate_consultations_and_qa.php
+            fi
+
+            # Reload PHP-FPM if available (to clear OPcache)
+            if systemctl is-active --quiet php-fpm-82; then
+              sudo systemctl reload php-fpm-82
+            elif [ -f /etc/init.d/php-fpm-82 ]; then
+              sudo /etc/init.d/php-fpm-82 reload || true
+            fi
+
+            if systemctl is-active --quiet nginx; then
+              sudo systemctl reload nginx
+            elif [ -f /etc/init.d/nginx ]; then
+              sudo /etc/init.d/nginx reload || true
+            fi
+
+            echo "==> Deployment completed successfully!"
+          REMOTE_SCRIPT
+
+      - name: Health Check
+        run: |
+          echo "Checking https://blog.dev-br.xyz..."
+          HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://blog.dev-br.xyz || echo "000")
+          echo "HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 301 ] || [ "$HTTP_STATUS" -eq 302 ]; then
+            echo "Website is UP and reachable!"
+          else
+            echo "Health check failed: response code was $HTTP_STATUS"
+            exit 1
+          fi
