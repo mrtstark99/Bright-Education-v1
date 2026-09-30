@@ -97,3 +97,46 @@ All code created, modified, or refactored in this repository must comply with th
 - [ ] All forms (Contact, Consultation, Newsletter) pass CSRF and input validation.
 - [ ] All routes return HTTP 200 without PHP errors or warnings.
 - [ ] Visual design exactly mirrors the aesthetic quality of `bright-edu`.
+
+
+## 4. Deployment Architecture & Operations
+
+### Production Environment Specifications
+- **Target Server**: VM101 (`brhub-web`, `192.168.0.110`) on Proxmox host (`192.168.0.109`).
+- **Live URL**: `https://blog.dev-br.xyz` (Proxied via Cloudflare Tunnel on `192.168.0.111`).
+- **Web Server**: Nginx with PHP 8.2 FastCGI (`php-fpm-82`).
+- **Webroot**: `/www/wwwroot/blog` (Public docroot: `/www/wwwroot/blog/public`).
+- **Repository**: `https://github.com/mrtstark99/Bright-Education-v1`
+
+### Automated Deployment Mechanisms
+1. **GitHub Actions CI/CD (`.github/workflows/deploy.yml`)**:
+   - Triggers automatically upon pushing commits to the `main` branch.
+   - Executes full regression suite (`php tests/run_tests.php`, `php tests/bright_edu_feature_test.php`, `php tests/post_element_contract_test.php`, `php tests/ai_guidelines_test.php`).
+   - Connects securely via SSH using Cloudflare Access gateway (`ssh.dev-br.xyz`).
+   - Packages application code, backs up existing database (`database/backups/blog.db.<timestamp>.bak`), unpacks new code, executes migrations (`migrate_bright_edu.php` and `migrate_consultations_and_qa.php`), adjusts permissions (`www:www`, `755`/`775`), reloads `php-fpm-82` and `nginx`, and performs automated HTTP health checks.
+
+2. **Local 1-Click Deployment (`deploy.ps1` / `scripts/deploy.sh`)**:
+   - For rapid operator deployments directly from developer workstations:
+     ```powershell
+     # From C:\Projects\Bright-Education-v1:
+     .\deploy.ps1
+     ```
+   - Automatically runs local test batteries, backs up the remote SQLite database, transfers code archives, runs migrations, reloads web services, and verifies live HTTP status.
+
+### Production Verification Audit
+All 15 endpoints verified live on `https://blog.dev-br.xyz`:
+- `https://blog.dev-br.xyz/` (HTTP 200, 159 KB - Full 9-section Bright Education homepage)
+- `https://blog.dev-br.xyz/blog` (HTTP 200, 46 KB - Blog magazine catalog)
+- `https://blog.dev-br.xyz/services` (HTTP 200, 48 KB - Services directory)
+- `https://blog.dev-br.xyz/services/du-hoc-truong-nhat-ngu` (HTTP 200, 31 KB - Service detail)
+- `https://blog.dev-br.xyz/contact` (HTTP 200, 37 KB - Contact inquiry form)
+- `https://blog.dev-br.xyz/about` (HTTP 200, 33 KB - About us)
+- `https://blog.dev-br.xyz/schools` (HTTP 200, 229 KB - Interactive partner schools database)
+- `https://blog.dev-br.xyz/courses` (HTTP 200, 37 KB - JLPT courses)
+- `https://blog.dev-br.xyz/process` (HTTP 200, 46 KB - 7-Step COE & Visa process)
+- `https://blog.dev-br.xyz/documents` (HTTP 200, 39 KB - Application documents)
+- `https://blog.dev-br.xyz/cost` (HTTP 200, 48 KB - Cost & living estimator)
+- `https://blog.dev-br.xyz/consultation` (HTTP 200, 51 KB - Zoom consultation booking & schedule)
+- `https://blog.dev-br.xyz/qa` (HTTP 200, 80 KB - Community Q&A & support groups)
+- `https://blog.dev-br.xyz/sitemap.xml` (HTTP 200, 3.7 KB - Dynamic XML sitemap)
+- `https://blog.dev-br.xyz/api/agent.php` (HTTP 401 - AI Agent endpoint active and guarded by Bearer token auth)
