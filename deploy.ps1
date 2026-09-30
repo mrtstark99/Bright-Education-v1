@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  BRIGHT EDUCATION v1 - AUTOMATED PRODUCTION DEPLOYMENT   " -ForegroundColor Cyan
-Write-Host "  Target: $ServerUser@$ServerHost:$RemoteDir               " -ForegroundColor Cyan
+Write-Host "  Target: ${ServerUser}@${ServerHost}:${RemoteDir}        " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Run local test suite before deploying
@@ -33,7 +33,8 @@ Write-Host "[OK] All local tests passed cleanly." -ForegroundColor Green
 
 # 2. Test SSH connectivity
 Write-Host "`n[2/6] Testing SSH connectivity to $ServerHost..." -ForegroundColor Yellow
-$sshCheck = ssh -i $KeyPath -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$ServerUser@$ServerHost" "echo 'SSH_OK'"
+$sshTarget = "${ServerUser}@${ServerHost}"
+$sshCheck = ssh -i $KeyPath -o StrictHostKeyChecking=no -o ConnectTimeout=5 $sshTarget "echo 'SSH_OK'"
 if ($sshCheck -ne "SSH_OK") {
     Write-Host "[FAIL] Unable to connect to $ServerHost via SSH. Check network / key." -ForegroundColor Red
     exit 1
@@ -42,22 +43,13 @@ Write-Host "[OK] SSH connection established." -ForegroundColor Green
 
 # 3. Create server database backup
 Write-Host "`n[3/6] Backing up existing database on server..." -ForegroundColor Yellow
-ssh -i $KeyPath -o StrictHostKeyChecking=no "$ServerUser@$ServerHost" @"
-    sudo mkdir -p $RemoteDir/database/backups
-    if [ -f $RemoteDir/database/blog.db ]; then
-        sudo cp -p $RemoteDir/database/blog.db $RemoteDir/database/backups/blog.db.\$(date +%Y%m%d_%H%M%S).bak
-        echo "[OK] Remote database backed up."
-    else
-        echo "[INFO] No existing remote database found."
-    fi
-"@
+ssh -i $KeyPath -o StrictHostKeyChecking=no $sshTarget "sudo mkdir -p $RemoteDir/database/backups && if [ -f $RemoteDir/database/blog.db ]; then sudo cp -p $RemoteDir/database/blog.db $RemoteDir/database/backups/blog.db.`$(date +%s).bak; echo '[OK] Remote database backed up.'; fi"
 
 # 4. Package application
 Write-Host "`n[4/6] Creating deployment package..." -ForegroundColor Yellow
 $tarFile = "$PSScriptRoot\deploy_package.tar.gz"
 if (Test-Path $tarFile) { Remove-Item $tarFile -Force }
 
-# Use tar to bundle all code files
 tar --exclude=".git" `
     --exclude="database/blog.db*" `
     --exclude="database/.secret_key" `
@@ -70,48 +62,10 @@ Write-Host "[OK] Package created: $([math]::Round((Get-Item $tarFile).Length / 1
 
 # 5. Transfer & Extract
 Write-Host "`n[5/6] Transferring and extracting on remote server..." -ForegroundColor Yellow
-scp -i $KeyPath -o StrictHostKeyChecking=no $tarFile "$ServerUser@$ServerHost:/tmp/deploy_package.tar.gz"
+$scpDest = "${ServerUser}@${ServerHost}:/tmp/deploy_package.tar.gz"
+scp -i $KeyPath -o StrictHostKeyChecking=no $tarFile $scpDest
 
-ssh -i $KeyPath -o StrictHostKeyChecking=no "$ServerUser@$ServerHost" @"
-    set -e
-    echo "==> Extracting files to $RemoteDir..."
-    sudo mkdir -p $RemoteDir
-    sudo tar -xzf /tmp/deploy_package.tar.gz -C $RemoteDir/
-    rm -f /tmp/deploy_package.tar.gz
-
-    # Ensure uploads and database folders exist
-    sudo mkdir -p $RemoteDir/database $RemoteDir/public/uploads
-
-    # Set ownership and permissions
-    sudo chown -R www:www $RemoteDir
-    sudo chmod -R 755 $RemoteDir
-    sudo chmod -R 775 $RemoteDir/database $RemoteDir/public/uploads
-
-    # Run database migrations
-    echo "==> Running database migrations..."
-    if [ -f $RemoteDir/database/migrate_bright_edu.php ]; then
-        sudo -u www php $RemoteDir/database/migrate_bright_edu.php
-    fi
-    if [ -f $RemoteDir/database/migrate_consultations_and_qa.php ]; then
-        sudo -u www php $RemoteDir/database/migrate_consultations_and_qa.php
-    fi
-
-    # Reload PHP-FPM 8.2 and Nginx
-    echo "==> Reloading web services..."
-    if systemctl is-active --quiet php-fpm-82; then
-        sudo systemctl reload php-fpm-82
-    elif [ -f /etc/init.d/php-fpm-82 ]; then
-        sudo /etc/init.d/php-fpm-82 reload
-    fi
-
-    if systemctl is-active --quiet nginx; then
-        sudo systemctl reload nginx
-    elif [ -f /etc/init.d/nginx ]; then
-        sudo /etc/init.d/nginx reload
-    fi
-
-    echo "==> Remote server update complete!"
-"@
+ssh -i $KeyPath -o StrictHostKeyChecking=no $sshTarget "sudo mkdir -p $RemoteDir && sudo tar -xzf /tmp/deploy_package.tar.gz -C $RemoteDir/ && rm -f /tmp/deploy_package.tar.gz && sudo mkdir -p $RemoteDir/database $RemoteDir/public/uploads && sudo chown -R www:www $RemoteDir && sudo chmod -R 755 $RemoteDir && sudo chmod -R 775 $RemoteDir/database $RemoteDir/public/uploads && echo '==> Running migrations...' && if [ -f $RemoteDir/database/migrate_bright_edu.php ]; then sudo -u www php $RemoteDir/database/migrate_bright_edu.php; fi && if [ -f $RemoteDir/database/migrate_consultations_and_qa.php ]; then sudo -u www php $RemoteDir/database/migrate_consultations_and_qa.php; fi && echo '==> Reloading web services...' && sudo systemctl reload php-fpm-82 && sudo systemctl reload nginx && echo '==> Remote server update complete!'"
 
 Remove-Item $tarFile -Force
 
